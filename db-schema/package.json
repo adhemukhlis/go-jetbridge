@@ -1,0 +1,22 @@
+{
+	"name": "db-schema",
+	"version": "1.0.0",
+	"description": "",
+	"scripts": {
+		"prisma:reset": "rm -rf prisma/migrations && prisma migrate reset --force && prisma migrate dev --name init"
+	},
+	"keywords": [],
+	"author": "adhemukhlis",
+	"license": "ISC",
+	"packageManager": "pnpm@10.33.0",
+	"dependencies": {
+		"@prisma/adapter-pg": "^7.7.0",
+		"@prisma/client": "^7.7.0",
+		"dotenv": "^17.4.2",
+		"prisma": "^7.7.0"
+	},
+	"devDependencies": {
+		"@types/node": "^25.6.0",
+		"typescript": "^6.0.3"
+	}
+}

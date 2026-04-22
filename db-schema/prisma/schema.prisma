@@ -1,0 +1,66 @@
+// RULES & PATTERN
+// penamaan model menggunakan PascalCase
+// setiap model harus memiliki id, createdAt
+// setiap scalar field menggunakan camelCase
+// singkatan dalam camelCase menggunakan Pascal-style (contoh: pressurePsi)
+// setiap relation field menggunakan PascalCase
+// relation field yang bersifat jamak (one-to-many) WAJIB menggunakan akhiran 'List' (contoh: UserRoleList) untuk menghindari kerancuan s/es
+// field id (primary key, unique) harus menggunakan uuid(7) sebagai default value, dan harus gunakan tipe @db.Uuid
+// field dengan tipe DateTime harus menggunakan @db.Timestamptz(3)
+
+// REUSABLE/TEMPLATE
+// id          String     @id @default(uuid(7)) @db.Uuid       // use this for primary key
+// createdAt   DateTime   @default(now()) @db.Timestamptz(3)   // use this for DateTime
+// price       Decimal    @db.Money                            // use this for Currency Value
+
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  engineType   = "client"
+  moduleFormat = "cjs"
+}
+
+model User {
+  // Base
+  id        String   @id @default(uuid(7)) @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  // Attributes
+  name     String @db.VarChar(100)
+  email    String @unique @db.VarChar(255)
+  username String @unique @db.VarChar(32)
+
+  // Relations
+  UserRoleList UserRole[]
+}
+
+model Role {
+  // Base
+  id        String   @id @default(uuid(7)) @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  // Attributes
+  key  String @unique @db.VarChar(100)
+  name String @db.VarChar(100)
+
+  // Relations
+  UserRoleList UserRole[]
+}
+
+model UserRole {
+  // Base
+  id        String   @id @default(uuid(7)) @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  // Relations
+  User   User   @relation(fields: [userId], references: [id])
+  userId String @db.Uuid
+  Role   Role   @relation(fields: [roleId], references: [id])
+  roleId String @db.Uuid
+
+  @@unique([userId, roleId]) // Ensure a user doesn't have the same role twice
+}

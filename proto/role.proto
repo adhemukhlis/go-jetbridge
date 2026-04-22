@@ -1,0 +1,20 @@
+syntax = "proto3";
+package role;
+option go_package = "go-jetbridge/gen/proto/role";
+
+import "google/protobuf/empty.proto";
+
+service RoleService {
+  rpc GetRoles(google.protobuf.Empty) returns (RoleListResponse);
+}
+
+message RoleResponse {
+  string id = 1;
+  string key = 2;
+  string name = 3;
+}
+
+message RoleListResponse {
+  repeated RoleResponse roles = 1;
+}
+

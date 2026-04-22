@@ -1,0 +1,9 @@
+.DS_Store
+.vscode
+.gitignore
+README.md
+.dockerignore
+.git
+.env*
+db-schema
+gen

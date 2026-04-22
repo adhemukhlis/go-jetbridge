@@ -1,0 +1,17 @@
+autoInstallPeers: true
+
+dedupePeerDependents: true
+
+engineStrict: true
+
+packageImportMethod: hardlink
+
+preferFrozenLockfile: true
+
+sideEffectsCache: true
+
+storeDir: ~/.pnpm-store
+
+allowBuilds:
+ '@prisma/engines': true
+ prisma: true
