@@ -20,6 +20,14 @@ go build -ldflags "-s -w" -o server cmd/server/main.go
 buf generate
 ```
 
+## generate shared protos
+
+```
+buf export . --output ./contract
+```
+
+> use `contract` in other microservices
+
 ## generate jet
 
 ```
@@ -48,6 +56,18 @@ golangci-lint run
 
 ```bash
 goimports -w .
+```
+
+## dependencies update
+
+```bash
+rm go.sum && go get -u ./... && go mod tidy
+```
+
+## buf pull
+
+```bash
+buf export https://github.com/adhemukhlis/go-jetbridge.git#branch=main,subdir=contract --output ./contract
 ```
 
 ## stack

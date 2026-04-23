@@ -40,7 +40,7 @@ func (h *Handler) GetAllUser(ctx context.Context, _ *emptypb.Empty) (*user.UserL
 	}, nil
 }
 
-func (h *Handler) CreateUser(ctx context.Context, req *user.CreateUserRequest) (*user.UserResponse, error) {
+func (h *Handler) CreateUser(ctx context.Context, req *user.CreateUserRequest) (*user.UserMinimumResponse, error) {
 	u := model.User{
 		Name:     req.Name,
 		Username: req.Username,
@@ -52,7 +52,43 @@ func (h *Handler) CreateUser(ctx context.Context, req *user.CreateUserRequest) (
 		return nil, err
 	}
 
-	return mapUserToPB(createdUser), nil
+	return mapUserToMinimumPB(createdUser.ID.String()), nil
+}
+
+func (h *Handler) UpdateUser(ctx context.Context, req *user.UpdateUserRequest) (*user.UserMinimumResponse, error) {
+	// For partial updates, we could fetch then merge, or build a dynamic update.
+	// For "CRUD biasa", we'll fetch then merge here to keep repository simple.
+	existing, err := h.Service.GetByID(ctx, req.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	u := existing.User
+	if req.Name != nil {
+		u.Name = *req.Name
+	}
+	if req.Username != nil {
+		u.Username = *req.Username
+	}
+	if req.Email != nil {
+		u.Email = *req.Email
+	}
+
+	updatedUser, err := h.Service.Update(ctx, req.Id, u)
+	if err != nil {
+		return nil, err
+	}
+
+	return mapUserToMinimumPB(updatedUser.ID.String()), nil
+}
+
+func (h *Handler) DeleteUser(ctx context.Context, req *user.DeleteUserRequest) (*user.UserMinimumResponse, error) {
+	err := h.Service.Delete(ctx, req.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	return mapUserToMinimumPB(req.Id), nil
 }
 
 // mapUserToPB translates the internal user model (with roles) to the Protobuf response format.
@@ -72,5 +108,11 @@ func mapUserToPB(u WithRoles) *user.UserResponse {
 		Username: u.Username,
 		Email:    u.Email,
 		Roles:    pbRoles,
+	}
+}
+
+func mapUserToMinimumPB(id string) *user.UserMinimumResponse {
+	return &user.UserMinimumResponse{
+		Id: id,
 	}
 }

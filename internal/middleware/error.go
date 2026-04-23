@@ -11,6 +11,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"buf.build/go/protovalidate"
 )
 
 // UnaryErrorInterceptor is a gRPC unary server interceptor that catches downstream errors
@@ -28,6 +30,12 @@ func UnaryErrorInterceptor(ctx context.Context, req interface{}, _ *grpc.UnarySe
 
 	// Log the error for debugging purposes (matching previous transport behavior)
 	fmt.Printf("DEBUG ERROR: type=%T, value=%v\n", err, err)
+
+	// Handle validation errors from protovalidate (equivalent to 400 Bad Request)
+	var valErr *protovalidate.ValidationError
+	if errors.As(err, &valErr) {
+		return nil, status.Error(codes.InvalidArgument, valErr.Error())
+	}
 
 	// Map specific database errors using PostgreSQL codes
 	var pqErr *pq.Error

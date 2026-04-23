@@ -1,18 +1,3 @@
-// RULES & PATTERN
-// penamaan model menggunakan PascalCase
-// setiap model harus memiliki id, createdAt
-// setiap scalar field menggunakan camelCase
-// singkatan dalam camelCase menggunakan Pascal-style (contoh: pressurePsi)
-// setiap relation field menggunakan PascalCase
-// relation field yang bersifat jamak (one-to-many) WAJIB menggunakan akhiran 'List' (contoh: UserRoleList) untuk menghindari kerancuan s/es
-// field id (primary key, unique) harus menggunakan uuid(7) sebagai default value, dan harus gunakan tipe @db.Uuid
-// field dengan tipe DateTime harus menggunakan @db.Timestamptz(3)
-
-// REUSABLE/TEMPLATE
-// id          String     @id @default(uuid(7)) @db.Uuid       // use this for primary key
-// createdAt   DateTime   @default(now()) @db.Timestamptz(3)   // use this for DateTime
-// price       Decimal    @db.Money                            // use this for Currency Value
-
 datasource db {
   provider = "postgresql"
 }

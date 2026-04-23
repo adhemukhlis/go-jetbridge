@@ -9,13 +9,19 @@ import (
 	"os/signal"    // Provides access to incoming operating system signals
 	"syscall"      // Contains low-level system call constants (e.g., SIGTERM)
 
-	"go-jetbridge/gen/proto/user"             // Generated gRPC code for the User service
+	"go-jetbridge/gen/proto/role"
+	"go-jetbridge/gen/proto/user" // Generated gRPC code for the User service
+	pkgrole "go-jetbridge/internal/core/role"
 	pkguser "go-jetbridge/internal/core/user" // Core business logic layer
-	"go-jetbridge/internal/middleware"        // Custom middleware for API Key security
+	"go-jetbridge/internal/infrastructure/cache"
+	"go-jetbridge/internal/middleware" // Custom middleware for API Key security
+	"time"
 
-	"github.com/joho/godotenv"       // Library for loading configuration from .env files
-	_ "github.com/lib/pq"            // PostgreSQL driver (imported for side effects)
-	stdgrpc "google.golang.org/grpc" // Core gRPC framework and utilities
+	"buf.build/go/protovalidate"
+	"github.com/joho/godotenv" // Library for loading configuration from .env files
+	_ "github.com/lib/pq"      // PostgreSQL driver (imported for side effects)
+	"google.golang.org/grpc"   // Core gRPC framework and utilities
+	"google.golang.org/grpc/reflection"
 )
 
 func main() {
@@ -79,22 +85,38 @@ func main() {
 		log.Fatalf("failed to establishing network listener: %v", err)
 	}
 
-	// Initialize gRPC server with a chain of Unary Interceptors for security and error handling
-	s := stdgrpc.NewServer(
-		stdgrpc.ChainUnaryInterceptor(
-			middleware.UnaryAuthInterceptor,
+	// Initialize protovalidate validator
+	v, err := protovalidate.New()
+	if err != nil {
+		log.Fatalf("failed to initialize validator: %v", err)
+	}
+
+	// Initialize gRPC server with a chain of Unary Interceptors for security, validation and error handling
+	s := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
 			middleware.UnaryErrorInterceptor,
+			middleware.UnaryAuthInterceptor,
+			middleware.UnaryValidationInterceptor(v),
 		),
 	)
 
 	// Dependency Injection: Initialize standard utilities, repository, service, and transport handlers
 
-	userRepo := &pkguser.User{DB: db}
-	userService := pkguser.NewService(userRepo)
-	userHandler := &pkguser.Handler{Service: userService}
+	// Initialize In-Memory Cache (Default TTL: 5m, Cleanup: 10m)
+	appCache := cache.NewInMemoryCache(5*time.Minute, 10*time.Minute)
 
-	// Associate the Service implementations with the gRPC server
+	userRepo := &pkguser.User{DB: db}
+	userService := pkguser.NewService(userRepo, appCache)
+	userHandler := &pkguser.Handler{Service: userService}
 	user.RegisterUserServiceServer(s, userHandler)
+
+	roleRepo := &pkgrole.Role{DB: db}
+	roleService := pkgrole.NewService(roleRepo, appCache)
+	roleHandler := &pkgrole.Handler{Service: roleService}
+	role.RegisterRoleServiceServer(s, roleHandler)
+
+	// Register reflection service on gRPC server to support Postman/grpcurl discovery
+	reflection.Register(s)
 
 	// Launch gRPC server in a background goroutine to allow for non-blocking signal handling
 	go func() {
