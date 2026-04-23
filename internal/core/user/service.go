@@ -30,11 +30,11 @@ type Repository interface {
 // Service provides high-level business logic for User operations.
 type Service struct {
 	repo  Repository
-	cache cache.Cache
+	cache cache.Cache[any]
 }
 
 // NewService creates a new instance of Service with the given repository and cache.
-func NewService(repo Repository, cache cache.Cache) *Service {
+func NewService(repo Repository, cache cache.Cache[any]) *Service {
 	return &Service{
 		repo:  repo,
 		cache: cache,

@@ -17,7 +17,7 @@ else
 fi
 
 # Required environment variables check
-required_vars=("PGHOST" "PGPORT" "PGUSER" "PGDATABASE")
+required_vars=("DATABASE_URL")
 for var in "${required_vars[@]}"; do
 	if [ -z "${!var}" ]; then
 		echo "❌ Error: $var is not set in .env file"
@@ -27,15 +27,15 @@ done
 
 # Generate to a temporary directory to avoid using dynamic db name as folder name
 TEMP_GEN_DIR=$(mktemp -d)
-jet -source=PostgreSQL -path="$TEMP_GEN_DIR" -ignore-tables=_prisma_migrations -host=$PGHOST -port=$PGPORT -user=$PGUSER -password=$PGPASSWORD -dbname=$PGDATABASE
+jet -source=PostgreSQL -path="$TEMP_GEN_DIR" -ignore-tables=_prisma_migrations -dsn="$DATABASE_URL"
 
 # Clean up existing jet gen directory
 rm -rf ./gen/jet
 mkdir -p ./gen/jet
 
 # Move generated content to gen/jet
-# Jet creates a folder with the db name, we move its contents to gen/jet
-mv "$TEMP_GEN_DIR/$PGDATABASE/"* ./gen/jet/
+# Jet creates a folder with the db name, we move its contents to gen/jet by selecting the only directory inside TEMP_GEN_DIR
+mv "$TEMP_GEN_DIR"/*/* ./gen/jet/
 
 # Clean up temp directory
 rm -rf "$TEMP_GEN_DIR"

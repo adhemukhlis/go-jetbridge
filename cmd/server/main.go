@@ -18,9 +18,9 @@ import (
 	"time"
 
 	"buf.build/go/protovalidate"
-	"github.com/joho/godotenv" // Library for loading configuration from .env files
-	_ "github.com/lib/pq"      // PostgreSQL driver (imported for side effects)
-	"google.golang.org/grpc"   // Core gRPC framework and utilities
+	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver (pgx)
+	"github.com/joho/godotenv"         // Library for loading configuration from .env files
+	"google.golang.org/grpc"           // Core gRPC framework and utilities
 	"google.golang.org/grpc/reflection"
 )
 
@@ -30,38 +30,13 @@ func main() {
 		log.Println("No .env file found, using system environment variables")
 	}
 
-	dbPort := os.Getenv("PGPORT")
-	if dbPort == "" {
-		log.Fatal("PGPORT is not set in the environment")
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Fatal("DATABASE_URL is not set in the environment")
 	}
 
-	dbUser := os.Getenv("PGUSER")
-	if dbUser == "" {
-		log.Fatal("PGUSER is not set in the environment")
-	}
-
-	dbPassword := os.Getenv("PGPASSWORD")
-
-	dbHost := os.Getenv("PGHOST")
-	if dbHost == "" {
-		log.Fatal("PGHOST is not set in the environment")
-	}
-
-	dbName := os.Getenv("PGDATABASE")
-	if dbName == "" {
-		log.Fatal("PGDATABASE is not set in the environment")
-	}
-
-	sslMode := os.Getenv("SSL_MODE")
-	if sslMode == "" {
-		log.Fatal("SSL_MODE is not set in the environment")
-	}
-
-	// Retrieve database connection string from environment
-	dbURL := fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=%s", dbUser, dbPassword, dbHost, dbPort, dbName, sslMode)
-
-	// Initialize SQL database connection pool using the postgres driver
-	db, err := sql.Open("postgres", dbURL)
+	// Initialize SQL database connection pool using the pgx driver
+	db, err := sql.Open("pgx", dbURL)
 	if err != nil {
 		log.Fatalf("failed to open database: %v", err)
 	}
@@ -102,15 +77,15 @@ func main() {
 
 	// Dependency Injection: Initialize standard utilities, repository, service, and transport handlers
 
-	// Initialize In-Memory Cache (Default TTL: 5m, Cleanup: 10m)
-	appCache := cache.NewInMemoryCache(5*time.Minute, 10*time.Minute)
+	// Initialize In-Memory Cache (Default TTL: 5m)
+	appCache := cache.NewInMemoryCache[any](5 * time.Minute)
 
-	userRepo := &pkguser.User{DB: db}
+	userRepo := pkguser.NewRepository(db)
 	userService := pkguser.NewService(userRepo, appCache)
 	userHandler := &pkguser.Handler{Service: userService}
 	user.RegisterUserServiceServer(s, userHandler)
 
-	roleRepo := &pkgrole.Role{DB: db}
+	roleRepo := pkgrole.NewRepository(db)
 	roleService := pkgrole.NewService(roleRepo, appCache)
 	roleHandler := &pkgrole.Handler{Service: roleService}
 	role.RegisterRoleServiceServer(s, roleHandler)

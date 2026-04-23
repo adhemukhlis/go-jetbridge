@@ -7,13 +7,13 @@ import (
 
 // Cache defines the interface for caching operations.
 // This abstraction allows for easy swapping of cache providers.
-type Cache interface {
+type Cache[V any] interface {
 	// Get retrieves a value from the cache by key.
 	// It returns the value and a boolean indicating if the key was found.
-	Get(ctx context.Context, key string) (interface{}, bool)
+	Get(ctx context.Context, key string) (V, bool)
 
 	// Set stores a value in the cache with a specified TTL (Time-To-Live).
-	Set(ctx context.Context, key string, value interface{}, ttl time.Duration)
+	Set(ctx context.Context, key string, value V, ttl time.Duration)
 
 	// Delete removes a value from the cache by key.
 	Delete(ctx context.Context, key string)

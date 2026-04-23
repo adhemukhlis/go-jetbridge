@@ -24,21 +24,13 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-ARG PGHOST
-ARG PGPORT
-ARG PGUSER
-ARG PGPASSWORD
-ARG PGDATABASE
+ARG DATABASE_URL
 
-ENV PGHOST=$PGHOST
-ENV PGPORT=$PGPORT
-ENV PGUSER=$PGUSER
-ENV PGPASSWORD=$PGPASSWORD
-ENV PGDATABASE=$PGDATABASE
+ENV DATABASE_URL=$DATABASE_URL
 
 # 1. Jet Generate
 RUN TEMP_GEN_DIR=$(mktemp -d) && \
-    jet -source=PostgreSQL -host=${PGHOST} -port=${PGPORT} -user=${PGUSER} -password=${PGPASSWORD} -dbname=${PGDATABASE} -path=$TEMP_GEN_DIR -ignore-tables=_prisma_migrations && \
+    jet -source=PostgreSQL -path=$TEMP_GEN_DIR -ignore-tables=_prisma_migrations -dsn="$DATABASE_URL" && \
     rm -rf ./gen/jet && mkdir -p ./gen/jet && \
     mv $TEMP_GEN_DIR/${PGDATABASE}/* ./gen/jet/ && \
     rm -rf $TEMP_GEN_DIR

@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/go-jet/jet/v2/qrm"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -38,11 +38,11 @@ func UnaryErrorInterceptor(ctx context.Context, req interface{}, _ *grpc.UnarySe
 	}
 
 	// Map specific database errors using PostgreSQL codes
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) {
-		fmt.Printf("DEBUG PQ ERROR: code=%s, message=%s\n", pqErr.Code, pqErr.Message)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		fmt.Printf("DEBUG PG ERROR: code=%s, message=%s\n", pgErr.Code, pgErr.Message)
 
-		switch pqErr.Code {
+		switch pgErr.Code {
 		case "23505":
 			return nil, status.Error(codes.AlreadyExists, "resource already exists")
 		case "22P02":

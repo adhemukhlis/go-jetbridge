@@ -21,10 +21,10 @@ type Repository interface {
 
 type Service struct {
 	repo  Repository
-	cache cache.Cache
+	cache cache.Cache[any]
 }
 
-func NewService(repo Repository, cache cache.Cache) *Service {
+func NewService(repo Repository, cache cache.Cache[any]) *Service {
 	return &Service{
 		repo:  repo,
 		cache: cache,

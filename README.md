@@ -73,7 +73,7 @@ buf export https://github.com/adhemukhlis/go-jetbridge.git#branch=main,subdir=co
 ## stack
 
 | name       | version | language |
-| :--------- | :------ | -------- |
+| :--------- | :------ | :------- |
 | Go         | 1.26.2  | go       |
 | Jet        | 2.14.1  | go       |
 | gRPC       | 1.80.0  | go       |

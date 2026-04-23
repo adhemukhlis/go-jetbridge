@@ -10,11 +10,18 @@ import (
 	"github.com/google/uuid"
 )
 
-type User struct {
-	DB *sql.DB
+type postgresRepository struct {
+	db *sql.DB
 }
 
-func (r *User) FindByID(ctx context.Context, id string) (WithRoles, error) {
+// NewRepository creates a new instance of the user repository.
+func NewRepository(db *sql.DB) Repository {
+	return &postgresRepository{
+		db: db,
+	}
+}
+
+func (r *postgresRepository) FindByID(ctx context.Context, id string) (WithRoles, error) {
 	var dest WithRoles
 	stmt := postgres.SELECT(
 		table.User.AllColumns,
@@ -24,14 +31,14 @@ func (r *User) FindByID(ctx context.Context, id string) (WithRoles, error) {
 			LEFT_JOIN(table.UserRole, table.UserRole.UserId.EQ(table.User.ID)).
 			LEFT_JOIN(table.Role, table.Role.ID.EQ(table.UserRole.RoleId)),
 	).WHERE(
-		table.User.ID.EQ(postgres.CAST(postgres.String(id)).AS_UUID()),
+		table.User.ID.EQ(postgres.UUID(uuid.MustParse(id))),
 	)
 
-	err := stmt.QueryContext(ctx, r.DB, &dest)
+	err := stmt.QueryContext(ctx, r.db, &dest)
 	return dest, err
 }
 
-func (r *User) FindAll(ctx context.Context) ([]WithRoles, error) {
+func (r *postgresRepository) FindAll(ctx context.Context) ([]WithRoles, error) {
 	var dest []WithRoles
 	stmt := postgres.SELECT(
 		table.User.AllColumns,
@@ -42,12 +49,12 @@ func (r *User) FindAll(ctx context.Context) ([]WithRoles, error) {
 			LEFT_JOIN(table.Role, table.Role.ID.EQ(table.UserRole.RoleId)),
 	)
 
-	err := stmt.QueryContext(ctx, r.DB, &dest)
+	err := stmt.QueryContext(ctx, r.db, &dest)
 	return dest, err
 }
 
 // Create inserts a new user into the database and returns the created user record.
-func (r *User) Create(ctx context.Context, u model.User) (WithRoles, error) {
+func (r *postgresRepository) Create(ctx context.Context, u model.User) (WithRoles, error) {
 	if u.ID == uuid.Nil {
 		newID, err := uuid.NewV7()
 		if err != nil {
@@ -65,7 +72,7 @@ func (r *User) Create(ctx context.Context, u model.User) (WithRoles, error) {
 	).MODEL(u).RETURNING(table.User.AllColumns)
 
 	var createdUser model.User
-	err := stmt.QueryContext(ctx, r.DB, &createdUser)
+	err := stmt.QueryContext(ctx, r.db, &createdUser)
 	if err != nil {
 		return WithRoles{}, err
 	}
@@ -78,17 +85,17 @@ func (r *User) Create(ctx context.Context, u model.User) (WithRoles, error) {
 }
 
 // Update updates an existing user record and returns the updated record.
-func (r *User) Update(ctx context.Context, u model.User) (WithRoles, error) {
+func (r *postgresRepository) Update(ctx context.Context, u model.User) (WithRoles, error) {
 	stmt := table.User.UPDATE(
 		table.User.Name,
 		table.User.Email,
 		table.User.Username,
 	).MODEL(u).
-		WHERE(table.User.ID.EQ(postgres.CAST(postgres.String(u.ID.String())).AS_UUID())).
+		WHERE(table.User.ID.EQ(postgres.UUID(u.ID))).
 		RETURNING(table.User.AllColumns)
 
 	var updatedUser model.User
-	err := stmt.QueryContext(ctx, r.DB, &updatedUser)
+	err := stmt.QueryContext(ctx, r.db, &updatedUser)
 	if err != nil {
 		return WithRoles{}, err
 	}
@@ -102,9 +109,9 @@ func (r *User) Update(ctx context.Context, u model.User) (WithRoles, error) {
 }
 
 // Delete removes a user record from the database by their ID.
-func (r *User) Delete(ctx context.Context, id string) error {
-	stmt := table.User.DELETE().WHERE(table.User.ID.EQ(postgres.CAST(postgres.String(id)).AS_UUID()))
-	res, err := stmt.ExecContext(ctx, r.DB)
+func (r *postgresRepository) Delete(ctx context.Context, id string) error {
+	stmt := table.User.DELETE().WHERE(table.User.ID.EQ(postgres.UUID(uuid.MustParse(id))))
+	res, err := stmt.ExecContext(ctx, r.db)
 	if err != nil {
 		return err
 	}

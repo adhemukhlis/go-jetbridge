@@ -7,10 +7,8 @@ import { PrismaTransactionType } from './types';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
-const DATABASE_URL = `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}?sslmode=${process.env.SSL_MODE}`;
-
 const adapter = new PrismaPg({
-	connectionString: DATABASE_URL,
+	connectionString: process.env.DATABASE_URL,
 	ssl: process.env.SSL_MODE === 'require' ? { rejectUnauthorized: false } : false,
 });
 

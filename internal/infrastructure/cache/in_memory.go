@@ -4,30 +4,41 @@ import (
 	"context"
 	"time"
 
-	"github.com/patrickmn/go-cache"
+	"github.com/jellydator/ttlcache/v3"
 )
 
-type inMemoryCache struct {
-	client *cache.Cache
+type inMemoryCache[V any] struct {
+	client *ttlcache.Cache[string, V]
 }
 
 // NewInMemoryCache creates a new instance of an in-memory cache.
 // defaultExpiration: how long items stay in the cache by default.
-// cleanupInterval: how often the cache should be purged of expired items.
-func NewInMemoryCache(defaultExpiration, cleanupInterval time.Duration) Cache {
-	return &inMemoryCache{
-		client: cache.New(defaultExpiration, cleanupInterval),
+func NewInMemoryCache[V any](defaultExpiration time.Duration) Cache[V] {
+	client := ttlcache.New[string, V](
+		ttlcache.WithTTL[string, V](defaultExpiration),
+	)
+
+	// Start the background worker for automatic cache eviction
+	go client.Start()
+
+	return &inMemoryCache[V]{
+		client: client,
 	}
 }
 
-func (c *inMemoryCache) Get(_ context.Context, key string) (interface{}, bool) {
-	return c.client.Get(key)
+func (c *inMemoryCache[V]) Get(_ context.Context, key string) (V, bool) {
+	item := c.client.Get(key)
+	if item != nil && !item.IsExpired() {
+		return item.Value(), true
+	}
+	var zero V
+	return zero, false
 }
 
-func (c *inMemoryCache) Set(_ context.Context, key string, value interface{}, ttl time.Duration) {
+func (c *inMemoryCache[V]) Set(_ context.Context, key string, value V, ttl time.Duration) {
 	c.client.Set(key, value, ttl)
 }
 
-func (c *inMemoryCache) Delete(_ context.Context, key string) {
+func (c *inMemoryCache[V]) Delete(_ context.Context, key string) {
 	c.client.Delete(key)
 }

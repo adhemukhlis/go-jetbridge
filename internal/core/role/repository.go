@@ -10,25 +10,32 @@ import (
 	"github.com/google/uuid"
 )
 
-type Role struct {
-	DB *sql.DB
+type postgresRepository struct {
+	db *sql.DB
 }
 
-func (r *Role) FindByID(ctx context.Context, id string) (model.Role, error) {
+// NewRepository creates a new instance of the role repository.
+func NewRepository(db *sql.DB) Repository {
+	return &postgresRepository{
+		db: db,
+	}
+}
+
+func (r *postgresRepository) FindByID(ctx context.Context, id string) (model.Role, error) {
 	var dest model.Role
 	stmt := postgres.SELECT(
 		table.Role.AllColumns,
 	).FROM(
 		table.Role,
 	).WHERE(
-		table.Role.ID.EQ(postgres.CAST(postgres.String(id)).AS_UUID()),
+		table.Role.ID.EQ(postgres.UUID(uuid.MustParse(id))),
 	)
 
-	err := stmt.QueryContext(ctx, r.DB, &dest)
+	err := stmt.QueryContext(ctx, r.db, &dest)
 	return dest, err
 }
 
-func (r *Role) FindAll(ctx context.Context) ([]model.Role, error) {
+func (r *postgresRepository) FindAll(ctx context.Context) ([]model.Role, error) {
 	var dest []model.Role
 	stmt := postgres.SELECT(
 		table.Role.AllColumns,
@@ -36,11 +43,11 @@ func (r *Role) FindAll(ctx context.Context) ([]model.Role, error) {
 		table.Role,
 	)
 
-	err := stmt.QueryContext(ctx, r.DB, &dest)
+	err := stmt.QueryContext(ctx, r.db, &dest)
 	return dest, err
 }
 
-func (r *Role) Create(ctx context.Context, m model.Role) (model.Role, error) {
+func (r *postgresRepository) Create(ctx context.Context, m model.Role) (model.Role, error) {
 	if m.ID == uuid.Nil {
 		newID, err := uuid.NewV7()
 		if err != nil {
@@ -56,26 +63,26 @@ func (r *Role) Create(ctx context.Context, m model.Role) (model.Role, error) {
 	).MODEL(m).RETURNING(table.Role.AllColumns)
 
 	var createdRole model.Role
-	err := stmt.QueryContext(ctx, r.DB, &createdRole)
+	err := stmt.QueryContext(ctx, r.db, &createdRole)
 	return createdRole, err
 }
 
-func (r *Role) Update(ctx context.Context, m model.Role) (model.Role, error) {
+func (r *postgresRepository) Update(ctx context.Context, m model.Role) (model.Role, error) {
 	stmt := table.Role.UPDATE(
 		table.Role.Key,
 		table.Role.Name,
 	).MODEL(m).
-		WHERE(table.Role.ID.EQ(postgres.CAST(postgres.String(m.ID.String())).AS_UUID())).
+		WHERE(table.Role.ID.EQ(postgres.UUID(m.ID))).
 		RETURNING(table.Role.AllColumns)
 
 	var updatedRole model.Role
-	err := stmt.QueryContext(ctx, r.DB, &updatedRole)
+	err := stmt.QueryContext(ctx, r.db, &updatedRole)
 	return updatedRole, err
 }
 
-func (r *Role) Delete(ctx context.Context, id string) error {
-	stmt := table.Role.DELETE().WHERE(table.Role.ID.EQ(postgres.CAST(postgres.String(id)).AS_UUID()))
-	res, err := stmt.ExecContext(ctx, r.DB)
+func (r *postgresRepository) Delete(ctx context.Context, id string) error {
+	stmt := table.Role.DELETE().WHERE(table.Role.ID.EQ(postgres.UUID(uuid.MustParse(id))))
+	res, err := stmt.ExecContext(ctx, r.db)
 	if err != nil {
 		return err
 	}
