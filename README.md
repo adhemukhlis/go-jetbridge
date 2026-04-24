@@ -1,6 +1,6 @@
 # go-jetbridge
 
-A high-performance Go microservice architecture purpose-built for **Server-to-Server (S2S)** communication. `go-jetbridge` delivers a **strict, low-latency gRPC** interface optimized for high-concurrency backend ecosystems, ensuring seamless interoperability with any system utilizing the gRPC protocol. By integrating the Jet SQL builder for type-safe database operations and Prisma for declarative schema management, it provides a robust and scalable foundation tailored for the demanding requirements of modern microservice infrastructures.
+A high-performance Go microservice architecture purpose-built for **Server-to-Server (S2S)** communication. `go-jetbridge` delivers a **strict, low-latency gRPC** interface optimized for high-concurrency backend ecosystems. Driven by zero-allocation patterns and maximum efficiency, the architecture leverages the **Jet SQL builder** paired with `pgx/v5` for type-safe, performant database operations, alongside **Prisma** for declarative schema management. Fortified with production-grade stability measures—including `singleflight` to prevent cache stampedes, generic-driven in-memory caching (`ttlcache/v3`), and robust context timeouts—it provides a highly resilient and scalable foundation tailored for the rigorous demands of modern microservice infrastructures.
 
 ## run
 

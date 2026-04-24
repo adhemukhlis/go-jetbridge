@@ -1,15 +1,15 @@
-// internal/core/user/service.go
 package user
 
 import (
 	"context"
-	"fmt"
 	"go-jetbridge/gen/jet/public/model"
+	"go-jetbridge/gen/proto/role"
+	"go-jetbridge/gen/proto/user"
 	"go-jetbridge/internal/infrastructure/cache"
-	"log"
+	"go-jetbridge/internal/pkg/logger"
 	"time"
 
-	"github.com/google/uuid"
+	"golang.org/x/sync/singleflight"
 )
 
 // WithRoles represents a user with their associated roles.
@@ -31,14 +31,26 @@ type Repository interface {
 type Service struct {
 	repo  Repository
 	cache cache.Cache[any]
+	sg    singleflight.Group
 }
 
-// NewService creates a new instance of Service with the given repository and cache.
-func NewService(repo Repository, cache cache.Cache[any]) *Service {
-	return &Service{
-		repo:  repo,
-		cache: cache,
+type ServiceOption func(*Service)
+
+func WithCache(c cache.Cache[any]) ServiceOption {
+	return func(s *Service) {
+		s.cache = c
 	}
+}
+
+// NewService creates a new instance of Service with the given repository and options.
+func NewService(repo Repository, opts ...ServiceOption) *Service {
+	s := &Service{
+		repo: repo,
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 const (
@@ -47,98 +59,181 @@ const (
 )
 
 // GetByID retrieves a single user with their roles by their ID.
-// It uses a cache-aside pattern to minimize database queries.
-func (s *Service) GetByID(ctx context.Context, id string) (WithRoles, error) {
-	cacheKey := fmt.Sprintf("%s%s", userCacheKeyPrefix, id)
+func (s *Service) GetByID(ctx context.Context, id string) (*user.UserResponse, error) {
+	log := logger.FromCtx(ctx)
+	cacheKey := userCacheKeyPrefix + id
 
 	// Try to get from cache
-	if val, found := s.cache.Get(ctx, cacheKey); found {
-		if user, ok := val.(WithRoles); ok {
-			log.Printf("🚀 [Cache Hit] User ID: %s", id)
-			return user, nil
+	if s.cache != nil {
+		if val, found := s.cache.Get(ctx, cacheKey); found {
+			if u, ok := val.(WithRoles); ok {
+				log.Info("Cache Hit", "User ID", id)
+				return mapUserToPB(&u), nil
+			}
 		}
 	}
 
-	log.Printf("📥 [Cache Miss] Fetching from DB - User ID: %s", id)
+	log.Info("Cache Miss - Fetching from DB", "User ID", id)
 
-	// If not in cache, get from repo
-	user, err := s.repo.FindByID(ctx, id)
-	if err != nil {
-		return WithRoles{}, err
-	}
-
-	// Save to cache for 10 minutes
-	s.cache.Set(ctx, cacheKey, user, 10*time.Minute)
-
-	return user, nil
-}
-
-// GetAll retrieves all users with their roles.
-func (s *Service) GetAll(ctx context.Context) ([]WithRoles, error) {
-	// Try to get from cache
-	if val, found := s.cache.Get(ctx, allUsersCacheKey); found {
-		if users, ok := val.([]WithRoles); ok {
-			log.Printf("🚀 [Cache Hit] All Users")
-			return users, nil
+	// Singleflight: protect against cache stampede
+	val, err, _ := s.sg.Do(cacheKey, func() (interface{}, error) {
+		u, dbErr := s.repo.FindByID(ctx, id)
+		if dbErr != nil {
+			return nil, dbErr
 		}
-	}
 
-	log.Printf("📥 [Cache Miss] Fetching all users from DB")
+		if s.cache != nil {
+			s.cache.Set(ctx, cacheKey, u, 10*time.Minute)
+		}
+		return u, nil
+	})
 
-	users, err := s.repo.FindAll(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Save to cache for 5 minutes
-	s.cache.Set(ctx, allUsersCacheKey, users, 5*time.Minute)
+	u := val.(WithRoles)
+	return mapUserToPB(&u), nil
+}
 
-	return users, nil
+// GetAll retrieves all users with their roles.
+func (s *Service) GetAll(ctx context.Context) (*user.UserListResponse, error) {
+	log := logger.FromCtx(ctx)
+	var users []WithRoles
+
+	// Try to get from cache
+	if s.cache != nil {
+		if val, found := s.cache.Get(ctx, allUsersCacheKey); found {
+			if u, ok := val.([]WithRoles); ok {
+				log.Info("Cache Hit", "All Users", true)
+				users = u
+			}
+		}
+	}
+
+	if users == nil {
+		log.Info("Cache Miss - Fetching all users from DB")
+
+		// Singleflight
+		val, err, _ := s.sg.Do(allUsersCacheKey, func() (interface{}, error) {
+			dbUsers, dbErr := s.repo.FindAll(ctx)
+			if dbErr != nil {
+				return nil, dbErr
+			}
+			if s.cache != nil {
+				s.cache.Set(ctx, allUsersCacheKey, dbUsers, 5*time.Minute)
+			}
+			return dbUsers, nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
+		users = val.([]WithRoles)
+	}
+
+	var pbUsers []*user.UserResponse
+	// Zero-copy looping
+	for i := range users {
+		pbUsers = append(pbUsers, mapUserToPB(&users[i]))
+	}
+
+	return &user.UserListResponse{
+		Users: pbUsers,
+	}, nil
 }
 
 // Create creates a new user and invalidates the "all users" cache.
-func (s *Service) Create(ctx context.Context, u model.User) (WithRoles, error) {
-	user, err := s.repo.Create(ctx, u)
+func (s *Service) Create(ctx context.Context, req *user.CreateUserRequest) (*user.UserMinimumResponse, error) {
+	u := model.User{
+		Name:     req.Name,
+		Username: req.Username,
+		Email:    req.Email,
+	}
+
+	createdUser, err := s.repo.Create(ctx, u)
 	if err != nil {
-		return WithRoles{}, err
+		return nil, err
 	}
 
 	// Invalidate the list cache
-	s.cache.Delete(ctx, allUsersCacheKey)
+	if s.cache != nil {
+		s.cache.Delete(ctx, allUsersCacheKey)
+	}
 
-	return user, nil
+	return mapUserToMinimumPB(createdUser.ID.String()), nil
 }
 
 // Update updates an existing user and invalidates relevant caches.
-func (s *Service) Update(ctx context.Context, id string, u model.User) (WithRoles, error) {
-	parsedID, err := uuid.Parse(id)
+func (s *Service) Update(ctx context.Context, req *user.UpdateUserRequest) (*user.UserMinimumResponse, error) {
+	existing, err := s.repo.FindByID(ctx, req.Id)
 	if err != nil {
-		return WithRoles{}, fmt.Errorf("invalid uuid: %w", err)
+		return nil, err
 	}
-	u.ID = parsedID
 
-	user, err := s.repo.Update(ctx, u)
+	u := existing.User
+	if req.Name != nil {
+		u.Name = *req.Name
+	}
+	if req.Username != nil {
+		u.Username = *req.Username
+	}
+	if req.Email != nil {
+		u.Email = *req.Email
+	}
+
+	updatedUser, err := s.repo.Update(ctx, u)
 	if err != nil {
-		return WithRoles{}, err
+		return nil, err
 	}
 
 	// Invalidate caches
-	s.cache.Delete(ctx, fmt.Sprintf("%s%s", userCacheKeyPrefix, id))
-	s.cache.Delete(ctx, allUsersCacheKey)
+	if s.cache != nil {
+		s.cache.Delete(ctx, userCacheKeyPrefix+req.Id)
+		s.cache.Delete(ctx, allUsersCacheKey)
+	}
 
-	return user, nil
+	return mapUserToMinimumPB(updatedUser.ID.String()), nil
 }
 
 // Delete removes a user and invalidates relevant caches.
-func (s *Service) Delete(ctx context.Context, id string) error {
+func (s *Service) Delete(ctx context.Context, id string) (*user.UserMinimumResponse, error) {
 	err := s.repo.Delete(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Invalidate caches
-	s.cache.Delete(ctx, fmt.Sprintf("%s%s", userCacheKeyPrefix, id))
-	s.cache.Delete(ctx, allUsersCacheKey)
+	if s.cache != nil {
+		s.cache.Delete(ctx, userCacheKeyPrefix+id)
+		s.cache.Delete(ctx, allUsersCacheKey)
+	}
 
-	return nil
+	return mapUserToMinimumPB(id), nil
+}
+
+// mapUserToPB takes a pointer to avoid struct copying overhead
+func mapUserToPB(u *WithRoles) *user.UserResponse {
+	var pbRoles []*role.RoleResponse
+	for i := range u.Role {
+		pbRoles = append(pbRoles, &role.RoleResponse{
+			Id:   u.Role[i].ID.String(),
+			Key:  u.Role[i].Key,
+			Name: u.Role[i].Name,
+		})
+	}
+
+	return &user.UserResponse{
+		Id:       u.ID.String(),
+		Name:     u.Name,
+		Username: u.Username,
+		Email:    u.Email,
+		Roles:    pbRoles,
+	}
+}
+
+func mapUserToMinimumPB(id string) *user.UserMinimumResponse {
+	return &user.UserMinimumResponse{
+		Id: id,
+	}
 }

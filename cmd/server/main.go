@@ -15,12 +15,14 @@ import (
 	pkguser "go-jetbridge/internal/core/user" // Core business logic layer
 	"go-jetbridge/internal/infrastructure/cache"
 	"go-jetbridge/internal/middleware" // Custom middleware for API Key security
+	"go-jetbridge/internal/pkg/logger"
 	"time"
 
 	"buf.build/go/protovalidate"
 	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver (pgx)
 	"github.com/joho/godotenv"         // Library for loading configuration from .env files
 	"google.golang.org/grpc"           // Core gRPC framework and utilities
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -66,12 +68,30 @@ func main() {
 		log.Fatalf("failed to initialize validator: %v", err)
 	}
 
+	// Configure gRPC Keep-Alive parameters
+	kasp := keepalive.ServerParameters{
+		MaxConnectionIdle:     15 * time.Minute,
+		MaxConnectionAge:      30 * time.Minute,
+		MaxConnectionAgeGrace: 5 * time.Minute,
+		Time:                  5 * time.Minute,
+		Timeout:               1 * time.Second,
+	}
+	kaep := keepalive.EnforcementPolicy{
+		MinTime:             5 * time.Minute,
+		PermitWithoutStream: true,
+	}
+
 	// Initialize gRPC server with a chain of Unary Interceptors for security, validation and error handling
 	s := grpc.NewServer(
+		grpc.KeepaliveEnforcementPolicy(kaep),
+		grpc.KeepaliveParams(kasp),
 		grpc.ChainUnaryInterceptor(
-			middleware.UnaryErrorInterceptor,
-			middleware.UnaryAuthInterceptor,
-			middleware.UnaryValidationInterceptor(v),
+			middleware.UnaryRecoveryInterceptor,               // Catch panics first
+			middleware.UnaryTimeoutInterceptor(5*time.Second), // Global 5s deadline
+			middleware.UnaryLoggerInterceptor(logger.New()),   // Log requests with slog
+			middleware.UnaryErrorInterceptor,                  // Handle errors
+			middleware.UnaryAuthInterceptor,                   // Authenticate
+			middleware.UnaryValidationInterceptor(v),          // Validate input
 		),
 	)
 
@@ -81,12 +101,12 @@ func main() {
 	appCache := cache.NewInMemoryCache[any](5 * time.Minute)
 
 	userRepo := pkguser.NewRepository(db)
-	userService := pkguser.NewService(userRepo, appCache)
+	userService := pkguser.NewService(userRepo, pkguser.WithCache(appCache))
 	userHandler := &pkguser.Handler{Service: userService}
 	user.RegisterUserServiceServer(s, userHandler)
 
 	roleRepo := pkgrole.NewRepository(db)
-	roleService := pkgrole.NewService(roleRepo, appCache)
+	roleService := pkgrole.NewService(roleRepo, pkgrole.WithCache(appCache))
 	roleHandler := &pkgrole.Handler{Service: roleService}
 	role.RegisterRoleServiceServer(s, roleHandler)
 

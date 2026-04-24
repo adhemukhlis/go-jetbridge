@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-jet/jet/v2/qrm"
 	"github.com/jackc/pgx/v5/pgconn"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -28,13 +29,33 @@ func UnaryErrorInterceptor(ctx context.Context, req interface{}, _ *grpc.UnarySe
 		return resp, err
 	}
 
-	// Log the error for debugging purposes (matching previous transport behavior)
-	fmt.Printf("DEBUG ERROR: type=%T, value=%v\n", err, err)
-
-	// Handle validation errors from protovalidate (equivalent to 400 Bad Request)
+	// Handle validation errors from protovalidate and map to Google's errdetails.BadRequest
 	var valErr *protovalidate.ValidationError
 	if errors.As(err, &valErr) {
-		return nil, status.Error(codes.InvalidArgument, valErr.Error())
+		st := status.New(codes.InvalidArgument, "validation failed")
+		br := &errdetails.BadRequest{}
+
+		for _, v := range valErr.Violations {
+			var fieldName string
+			if field := v.Proto.GetField(); field != nil {
+				elements := field.GetElements()
+				if len(elements) > 0 {
+					fieldName = elements[len(elements)-1].GetFieldName()
+				}
+			}
+
+			br.FieldViolations = append(br.FieldViolations, &errdetails.BadRequest_FieldViolation{
+				Field:       fieldName,
+				Description: v.Proto.GetMessage(),
+			})
+		}
+
+		stWithDetails, attachErr := st.WithDetails(br)
+		if attachErr == nil {
+			return nil, stWithDetails.Err()
+		}
+		// Fallback if WithDetails fails
+		return nil, st.Err()
 	}
 
 	// Map specific database errors using PostgreSQL codes

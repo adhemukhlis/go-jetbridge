@@ -2,13 +2,13 @@ package role
 
 import (
 	"context"
-	"fmt"
 	"go-jetbridge/gen/jet/public/model"
+	"go-jetbridge/gen/proto/role"
 	"go-jetbridge/internal/infrastructure/cache"
-	"log"
+	"go-jetbridge/internal/pkg/logger"
 	"time"
 
-	"github.com/google/uuid"
+	"golang.org/x/sync/singleflight"
 )
 
 type Repository interface {
@@ -22,13 +22,25 @@ type Repository interface {
 type Service struct {
 	repo  Repository
 	cache cache.Cache[any]
+	sg    singleflight.Group
 }
 
-func NewService(repo Repository, cache cache.Cache[any]) *Service {
-	return &Service{
-		repo:  repo,
-		cache: cache,
+type ServiceOption func(*Service)
+
+func WithCache(c cache.Cache[any]) ServiceOption {
+	return func(s *Service) {
+		s.cache = c
 	}
+}
+
+func NewService(repo Repository, opts ...ServiceOption) *Service {
+	s := &Service{
+		repo: repo,
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 const (
@@ -36,85 +48,152 @@ const (
 	allRolesCacheKey   = "roles:all"
 )
 
-func (s *Service) GetByID(ctx context.Context, id string) (model.Role, error) {
-	cacheKey := fmt.Sprintf("%s%s", roleCacheKeyPrefix, id)
+func (s *Service) GetByID(ctx context.Context, id string) (*role.RoleResponse, error) {
+	log := logger.FromCtx(ctx)
+	cacheKey := roleCacheKeyPrefix + id
 
-	if val, found := s.cache.Get(ctx, cacheKey); found {
-		if role, ok := val.(model.Role); ok {
-			log.Printf("🚀 [Cache Hit] Role ID: %s", id)
-			return role, nil
+	if s.cache != nil {
+		if val, found := s.cache.Get(ctx, cacheKey); found {
+			if r, ok := val.(model.Role); ok {
+				log.Info("Cache Hit", "Role ID", id)
+				return mapRoleToPB(&r), nil
+			}
 		}
 	}
 
-	log.Printf("📥 [Cache Miss] Fetching from DB - Role ID: %s", id)
+	log.Info("Cache Miss - Fetching from DB", "Role ID", id)
 
-	role, err := s.repo.FindByID(ctx, id)
-	if err != nil {
-		return model.Role{}, err
-	}
-
-	s.cache.Set(ctx, cacheKey, role, 10*time.Minute)
-
-	return role, nil
-}
-
-func (s *Service) GetAll(ctx context.Context) ([]model.Role, error) {
-	if val, found := s.cache.Get(ctx, allRolesCacheKey); found {
-		if roles, ok := val.([]model.Role); ok {
-			log.Printf("🚀 [Cache Hit] All Roles")
-			return roles, nil
+	val, err, _ := s.sg.Do(cacheKey, func() (interface{}, error) {
+		r, dbErr := s.repo.FindByID(ctx, id)
+		if dbErr != nil {
+			return nil, dbErr
 		}
-	}
 
-	log.Printf("📥 [Cache Miss] Fetching all roles from DB")
+		if s.cache != nil {
+			s.cache.Set(ctx, cacheKey, r, 10*time.Minute)
+		}
+		return r, nil
+	})
 
-	roles, err := s.repo.FindAll(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	s.cache.Set(ctx, allRolesCacheKey, roles, 5*time.Minute)
-
-	return roles, nil
+	r := val.(model.Role)
+	return mapRoleToPB(&r), nil
 }
 
-func (s *Service) Create(ctx context.Context, m model.Role) (model.Role, error) {
-	role, err := s.repo.Create(ctx, m)
-	if err != nil {
-		return model.Role{}, err
+func (s *Service) GetAll(ctx context.Context) (*role.RoleListResponse, error) {
+	log := logger.FromCtx(ctx)
+	var roles []model.Role
+
+	if s.cache != nil {
+		if val, found := s.cache.Get(ctx, allRolesCacheKey); found {
+			if r, ok := val.([]model.Role); ok {
+				log.Info("Cache Hit", "All Roles", true)
+				roles = r
+			}
+		}
 	}
 
-	s.cache.Delete(ctx, allRolesCacheKey)
+	if roles == nil {
+		log.Info("Cache Miss - Fetching all roles from DB")
 
-	return role, nil
+		val, err, _ := s.sg.Do(allRolesCacheKey, func() (interface{}, error) {
+			dbRoles, dbErr := s.repo.FindAll(ctx)
+			if dbErr != nil {
+				return nil, dbErr
+			}
+			if s.cache != nil {
+				s.cache.Set(ctx, allRolesCacheKey, dbRoles, 5*time.Minute)
+			}
+			return dbRoles, nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
+		roles = val.([]model.Role)
+	}
+
+	var pbRoles []*role.RoleResponse
+	for i := range roles {
+		pbRoles = append(pbRoles, mapRoleToPB(&roles[i]))
+	}
+
+	return &role.RoleListResponse{
+		Roles: pbRoles,
+	}, nil
 }
 
-func (s *Service) Update(ctx context.Context, id string, m model.Role) (model.Role, error) {
-	parsedID, err := uuid.Parse(id)
-	if err != nil {
-		return model.Role{}, fmt.Errorf("invalid uuid: %w", err)
-	}
-	m.ID = parsedID
-
-	role, err := s.repo.Update(ctx, m)
-	if err != nil {
-		return model.Role{}, err
+func (s *Service) Create(ctx context.Context, req *role.CreateRoleRequest) (*role.RoleMinimumResponse, error) {
+	m := model.Role{
+		Key:  req.Key,
+		Name: req.Name,
 	}
 
-	s.cache.Delete(ctx, fmt.Sprintf("%s%s", roleCacheKeyPrefix, id))
-	s.cache.Delete(ctx, allRolesCacheKey)
+	createdRole, err := s.repo.Create(ctx, m)
+	if err != nil {
+		return nil, err
+	}
 
-	return role, nil
+	if s.cache != nil {
+		s.cache.Delete(ctx, allRolesCacheKey)
+	}
+
+	return mapRoleToMinimumPB(createdRole.ID.String()), nil
 }
 
-func (s *Service) Delete(ctx context.Context, id string) error {
+func (s *Service) Update(ctx context.Context, req *role.UpdateRoleRequest) (*role.RoleMinimumResponse, error) {
+	existing, err := s.repo.FindByID(ctx, req.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	if req.Key != nil {
+		existing.Key = *req.Key
+	}
+	if req.Name != nil {
+		existing.Name = *req.Name
+	}
+
+	updatedRole, err := s.repo.Update(ctx, existing)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.cache != nil {
+		s.cache.Delete(ctx, roleCacheKeyPrefix+req.Id)
+		s.cache.Delete(ctx, allRolesCacheKey)
+	}
+
+	return mapRoleToMinimumPB(updatedRole.ID.String()), nil
+}
+
+func (s *Service) Delete(ctx context.Context, id string) (*role.RoleMinimumResponse, error) {
 	err := s.repo.Delete(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	s.cache.Delete(ctx, fmt.Sprintf("%s%s", roleCacheKeyPrefix, id))
-	s.cache.Delete(ctx, allRolesCacheKey)
+	if s.cache != nil {
+		s.cache.Delete(ctx, roleCacheKeyPrefix+id)
+		s.cache.Delete(ctx, allRolesCacheKey)
+	}
 
-	return nil
+	return mapRoleToMinimumPB(id), nil
+}
+
+func mapRoleToPB(r *model.Role) *role.RoleResponse {
+	return &role.RoleResponse{
+		Id:   r.ID.String(),
+		Key:  r.Key,
+		Name: r.Name,
+	}
+}
+
+func mapRoleToMinimumPB(id string) *role.RoleMinimumResponse {
+	return &role.RoleMinimumResponse{
+		Id: id,
+	}
 }

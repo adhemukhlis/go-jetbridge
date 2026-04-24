@@ -3,6 +3,7 @@ package role
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"go-jetbridge/gen/jet/public/model"
 	"go-jetbridge/gen/jet/public/table"
 
@@ -22,16 +23,21 @@ func NewRepository(db *sql.DB) Repository {
 }
 
 func (r *postgresRepository) FindByID(ctx context.Context, id string) (model.Role, error) {
+	parsedID, err := uuid.Parse(id)
+	if err != nil {
+		return model.Role{}, fmt.Errorf("invalid uuid: %w", err)
+	}
+
 	var dest model.Role
 	stmt := postgres.SELECT(
 		table.Role.AllColumns,
 	).FROM(
 		table.Role,
 	).WHERE(
-		table.Role.ID.EQ(postgres.UUID(uuid.MustParse(id))),
+		table.Role.ID.EQ(postgres.UUID(parsedID)),
 	)
 
-	err := stmt.QueryContext(ctx, r.db, &dest)
+	err = stmt.QueryContext(ctx, r.db, &dest)
 	return dest, err
 }
 
@@ -81,7 +87,12 @@ func (r *postgresRepository) Update(ctx context.Context, m model.Role) (model.Ro
 }
 
 func (r *postgresRepository) Delete(ctx context.Context, id string) error {
-	stmt := table.Role.DELETE().WHERE(table.Role.ID.EQ(postgres.UUID(uuid.MustParse(id))))
+	parsedID, err := uuid.Parse(id)
+	if err != nil {
+		return fmt.Errorf("invalid uuid: %w", err)
+	}
+
+	stmt := table.Role.DELETE().WHERE(table.Role.ID.EQ(postgres.UUID(parsedID)))
 	res, err := stmt.ExecContext(ctx, r.db)
 	if err != nil {
 		return err
