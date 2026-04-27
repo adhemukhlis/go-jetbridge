@@ -38,3 +38,5 @@ db-schema/generated
 gen/*
 !gen/.gitkeep
 server
+
+/backup

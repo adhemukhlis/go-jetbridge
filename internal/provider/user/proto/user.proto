@@ -1,0 +1,72 @@
+syntax = "proto3";
+package user;
+
+import "google/protobuf/empty.proto";
+import "buf/validate/validate.proto";
+
+// User Service
+service UserService {
+  rpc GetUser(GetUserRequest) returns (UserResponse);
+  rpc GetAllUser(google.protobuf.Empty) returns (UserListResponse);
+  rpc CreateUser(CreateUserRequest) returns (UserMinimumResponse);
+  rpc UpdateUser(UpdateUserRequest) returns (UserMinimumResponse);
+  rpc DeleteUser(DeleteUserRequest) returns (UserMinimumResponse);
+}
+
+// Requests
+
+message GetUserRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message CreateUserRequest {
+  string name        = 1 [(buf.validate.field).string.min_len = 3];
+  string username    = 2 [(buf.validate.field).string.min_len = 3];
+  string email       = 3 [(buf.validate.field).string.email = true];
+  string gender      = 4 [(buf.validate.field).string.min_len = 1];
+  string birthDate   = 5 [(buf.validate.field).string.min_len = 1];
+  string country     = 6 [(buf.validate.field).string.min_len = 1];
+  string city        = 7 [(buf.validate.field).string.min_len = 1];
+  string address     = 8 [(buf.validate.field).string.min_len = 1];
+  string phoneNumber = 9 [(buf.validate.field).string.min_len = 1];
+}
+
+message UpdateUserRequest {
+  string id                = 1 [(buf.validate.field).string.min_len = 1];
+  optional string name     = 2 [(buf.validate.field).string.min_len = 3];
+  optional string username = 3 [(buf.validate.field).string.min_len = 3];
+  optional string email    = 4 [(buf.validate.field).string.email = true];
+  optional string gender   = 5 [(buf.validate.field).string.min_len = 1];
+  optional string birthDate = 6 [(buf.validate.field).string.min_len = 1];
+  optional string country  = 7 [(buf.validate.field).string.min_len = 1];
+  optional string city     = 8 [(buf.validate.field).string.min_len = 1];
+  optional string address  = 9 [(buf.validate.field).string.min_len = 1];
+  optional string phoneNumber = 10 [(buf.validate.field).string.min_len = 1];
+}
+
+message DeleteUserRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// Responses
+
+message UserResponse {
+  string id                        = 1;
+  string name                      = 2;
+  string username                  = 3;
+  string email                     = 4;
+  string gender                    = 5;
+  string birthDate                 = 6;
+  string country                   = 7;
+  string city                      = 8;
+  string address                   = 9;
+  string phoneNumber               = 10;
+}
+
+message UserMinimumResponse {
+  string id = 1;
+}
+
+message UserListResponse {
+  repeated UserResponse users = 1;
+}

@@ -9,43 +9,39 @@ generator client {
   moduleFormat = "cjs"
 }
 
-model User {
+// model User {
+//   // Base
+//   id        String   @id @default(uuid(7)) @db.Uuid
+//   createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+//   // Attributes
+//   name     String @db.VarChar(100)
+//   email    String @unique @db.VarChar(255)
+//   username String @unique @db.VarChar(32)
+// }
+
+// model Role {
+//   // Base
+//   id        String   @id @default(uuid(7)) @db.Uuid
+//   createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+//   // Attributes
+//   key  String @unique @db.VarChar(100)
+//   name String @db.VarChar(100)
+// }
+
+model Credential {
   // Base
   id        String   @id @default(uuid(7)) @db.Uuid
   createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   // Attributes
-  name     String @db.VarChar(100)
-  email    String @unique @db.VarChar(255)
-  username String @unique @db.VarChar(32)
+  passwordHash         String    @db.VarChar(255)
+  suspendedAt          DateTime? @db.Timestamptz(3)
+  suspendReason        String?   @db.VarChar(255)
+  isNeedPasswordChange Boolean   @default(true)
 
-  // Relations
-  UserRoleList UserRole[]
-}
-
-model Role {
-  // Base
-  id        String   @id @default(uuid(7)) @db.Uuid
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-
-  // Attributes
-  key  String @unique @db.VarChar(100)
-  name String @db.VarChar(100)
-
-  // Relations
-  UserRoleList UserRole[]
-}
-
-model UserRole {
-  // Base
-  id        String   @id @default(uuid(7)) @db.Uuid
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-
-  // Relations
-  User   User   @relation(fields: [userId], references: [id])
-  userId String @db.Uuid
-  Role   Role   @relation(fields: [roleId], references: [id])
-  roleId String @db.Uuid
-
-  @@unique([userId, roleId]) // Ensure a user doesn't have the same role twice
+  // FK
+  userId String @unique @db.Uuid
 }

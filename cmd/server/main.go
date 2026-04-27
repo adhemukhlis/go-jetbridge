@@ -9,10 +9,9 @@ import (
 	"os/signal"    // Provides access to incoming operating system signals
 	"syscall"      // Contains low-level system call constants (e.g., SIGTERM)
 
-	"go-jetbridge/gen/proto/role"
-	"go-jetbridge/gen/proto/user" // Generated gRPC code for the User service
-	pkgrole "go-jetbridge/internal/core/role"
-	pkguser "go-jetbridge/internal/core/user" // Core business logic layer
+	"go-jetbridge/gen/proto/credential" // Generated gRPC code for the User service
+	// Generated gRPC code for the User service
+	pkgcredential "go-jetbridge/internal/core/credential" // Core business logic layer
 	"go-jetbridge/internal/infrastructure/cache"
 	"go-jetbridge/internal/middleware" // Custom middleware for API Key security
 	"go-jetbridge/internal/pkg/logger"
@@ -100,15 +99,10 @@ func main() {
 	// Initialize In-Memory Cache (Default TTL: 5m)
 	appCache := cache.NewInMemoryCache[any](5 * time.Minute)
 
-	userRepo := pkguser.NewRepository(db)
-	userService := pkguser.NewService(userRepo, pkguser.WithCache(appCache))
-	userHandler := &pkguser.Handler{Service: userService}
-	user.RegisterUserServiceServer(s, userHandler)
-
-	roleRepo := pkgrole.NewRepository(db)
-	roleService := pkgrole.NewService(roleRepo, pkgrole.WithCache(appCache))
-	roleHandler := &pkgrole.Handler{Service: roleService}
-	role.RegisterRoleServiceServer(s, roleHandler)
+	credentialRepo := pkgcredential.NewRepository(db)
+	credentialService := pkgcredential.NewService(credentialRepo, pkgcredential.WithCache(appCache))
+	credentialHandler := &pkgcredential.Handler{Service: credentialService}
+	credential.RegisterCredentialServiceServer(s, credentialHandler)
 
 	// Register reflection service on gRPC server to support Postman/grpcurl discovery
 	reflection.Register(s)
